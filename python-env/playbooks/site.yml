@@ -1,0 +1,98 @@
+- hosts: vagrant
+  remote_user: vagrant
+  become: true
+  become_method: sudo
+  vars:
+    python_ver: 3.6.1
+    pyenv_root: ~/.pyenv
+    app_dir: /opt/app
+    env_name: app_3_6_1
+  tasks:
+  - name: Install requirements
+    apt: pkg={{ item }} state=present update_cache=yes
+    with_items:
+      - git
+      - gcc
+      - make
+      - zlib1g-dev
+      - libssl-dev
+      - libbz2-dev
+      - libreadline-dev
+      - libsqlite3-dev
+    
+  - name: Install pyenv
+    become_user: vagrant
+    git: repo=https://github.com/pyenv/pyenv.git dest={{ pyenv_root }}
+
+  - name: Install pyenv-virtualenv
+    become_user: vagrant
+    git: repo=https://github.com/yyuu/{{ item }}.git dest={{ pyenv_root }}/plugins/{{ item }}
+    with_items:
+      - pyenv-virtualenv
+
+  - name: Initial Setting(export PYENV_ROOT)
+    become_user: vagrant
+    lineinfile:
+      state: present
+      create: yes
+      dest: "~/.bash_profile"
+      line: export PYENV_ROOT=$HOME/.pyenv
+
+  - name: Initial Setting(export PATH)
+    become_user: vagrant
+    lineinfile:
+      dest: "~/.bash_profile"
+      line: export PATH=$PYENV_ROOT/bin:$PATH
+
+  - name: Initial Setting(export pyenv)
+    become_user: vagrant
+    lineinfile:
+      dest: "~/.bash_profile"
+      line: eval "$(pyenv init -)"
+
+  - name: Initial Setting(eval pyenv virtualenv)
+    become_user: vagrant
+    lineinfile:
+      dest: "~/.bash_profile"
+      line: eval "$(pyenv virtualenv-init -)"
+
+  - name: Load pyenv setting
+    become_user: vagrant
+    shell: source ~/.bashrc executable=/bin/bash
+
+  - name: Python exists check
+    become_user: vagrant
+    stat: path={{ pyenv_root }}/versions/{{ python_ver }}
+    register: pec
+  - debug: var=pec.stat.exists
+
+  - name: Install Python
+    become_user: vagrant
+    shell: bash -lc "pyenv install {{ python_ver }}"
+    when: not pec.stat.exists
+  
+  - name: Setting Python
+    become_user: vagrant
+    shell: bash -lc "pyenv global {{ python_ver }}"
+    when: not pec.stat.exists
+
+  - name: Make application dir
+    file: path={{ app_dir }} state=directory state=directory owner=vagrant group=vagrant mode=0755
+
+  - name: Pyenv environment exists check
+    become_user: vagrant
+    stat: path={{ pyenv_root }}/versions/{{ env_name }}
+    register: peec
+  - debug: var=peec.stat.exists
+
+  - name: Set pyenv environment
+    become_user: vagrant
+    shell: bash -lc "pyenv virtualenv {{ python_ver }} {{ env_name }}"
+    when: not peec.stat.exists
+  - debug: var=peec.stat.exists
+
+  - name: Set application environment
+    become_user: vagrant
+    shell: bash -lc "pyenv local {{ env_name }}"
+    args:
+      chdir: "{{ app_dir }}"
